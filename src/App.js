@@ -1,5 +1,5 @@
 import styled from '@emotion/styled/macro';
-import { Component } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchPictures } from './services/fetchAPI';
 import { scrollTo } from './services/scrollTo';
 import { Searchbar } from './components/Searchbar/Searchbar';
@@ -7,6 +7,13 @@ import { ImageGallery } from './components/ImageGallery/ImageGallery';
 import { Button } from './components/Button/Button';
 import { Modal } from './components/Modal/Modal';
 import { Loader } from './components/Loader/Loader';
+
+const STATUS = {
+  idle: 'idle',
+  pending: 'pending',
+  resolved: 'resolved',
+  rejected: 'rejected',
+};
 
 const ErrorMsg = styled.div`
   text-align: center;
@@ -21,120 +28,97 @@ const Wrapper = styled.div`
   padding-bottom: 24px;
 `;
 
-class App extends Component {
-  state = {
-    images: [],
-    status: 'idle',
-    query: '',
-    page: 1,
-    currImg: null,
-  };
+export default function App() {
+  const [images, setImages] = useState([]);
+  const [status, setStatus] = useState(STATUS.idle);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [currImg, setCurrImg] = useState(null);
 
-  componentDidUpdate(prevProps, prevState) {
-    const { query, page } = this.state;
-
-    if (prevState.query !== query) {
-      this.setState({ page: 1, status: 'pending' });
+  useEffect(() => {
+    if (query !== '') {
+      setPage(1);
+      setStatus(STATUS.pending);
 
       fetchPictures(query, page)
         .then(res => {
           if (res.hits.length === 0) {
-            throw new Error('По данному запросу ничего не найдено');
+            throw new Error('Упс, по даному запиту нічого не знайдено...');
           }
-          this.setState({ images: res.hits, status: 'resolved' });
-        })
-        .catch(() => [
-          this.setState({
-            status: 'rejected',
-            page: 1,
-            images: [],
-            currImg: null,
-          }),
-        ]);
-    }
 
-    if (prevState.page !== page) {
-      this.setState({ status: 'pending' });
+          setImages(res.hits);
+          setStatus(STATUS.resolved);
+        })
+        .catch(() => {
+          setImages([]);
+          setPage(1);
+          setCurrImg(null);
+          setStatus(STATUS.rejected);
+        });
+    }
+  }, [query]);
+
+  useEffect(() => {
+    if (page !== 1) {
+      setStatus(STATUS.pending);
 
       fetchPictures(query, page)
-        .then(res =>
-          this.setState(prev => ({
-            images: [...prev.images, ...res.hits],
-            status: 'resolved',
-          })),
-        )
+        .then(res => {
+          setImages(prev => [...prev, ...res.hits]);
+          setStatus(STATUS.resolved);
+        })
         .then(scrollTo)
-        .catch(() => this.setState({ status: 'rejected' }));
+        .catch(() => setStatus(STATUS.resolved));
     }
-  }
+  }, [page]);
 
-  handleGalleryItemClick = currImg => {
-    this.setState({ currImg });
+  const handleLoadMore = () => {
+    setPage(p => p + 1);
   };
 
-  handleSubmit = query => {
-    this.setState({ query });
+  const closeModal = () => {
+    setCurrImg(null);
   };
 
-  handleLoadMore = () => {
-    this.setState(prevProps => ({ page: prevProps.page + 1 }));
-  };
-
-  closeModal = () => {
-    this.setState({ currImg: null });
-  };
-
-  handleModalMouseClick = e => {
+  const handleModalMouseClick = e => {
     if (e.target.nodeName !== 'IMG') {
-      this.closeModal();
+      closeModal();
     }
   };
 
-  handleModalEscClick = e => {
+  const handleModalEscClick = e => {
     if (e.code === 'Escape') {
-      this.closeModal();
+      closeModal();
     }
   };
 
-  render() {
-    const { query, status, images, currImg } = this.state;
-    const shouldShowBtn =
-      status !== 'rejected' && query !== '' && images.length >= 12;
+  const shouldShowBtn =
+    status !== STATUS.rejected && query !== '' && images.length >= 12;
 
-    return (
-      <Wrapper>
-        <Searchbar onSubmit={this.handleSubmit} />
-        {status === 'rejected' ? (
-          <ErrorMsg>
-            <h2>По данному запросу ничего не найдено</h2>
-          </ErrorMsg>
-        ) : (
-          <ImageGallery
-            images={this.state.images}
-            onClick={this.handleGalleryItemClick}
-          />
-        )}
-        {status === 'pending' ? (
-          <Loader />
-        ) : (
-          shouldShowBtn && (
-            <Button
-              type="button"
-              text="Load More"
-              onClick={this.handleLoadMore}
-            />
-          )
-        )}
-        {currImg && (
-          <Modal
-            currImg={currImg}
-            onClick={this.handleModalMouseClick}
-            onKeyDown={this.handleModalEscClick}
-          />
-        )}
-      </Wrapper>
-    );
-  }
+  return (
+    <Wrapper>
+      <Searchbar onSubmit={setQuery} />
+      {status === STATUS.rejected ? (
+        <ErrorMsg>
+          <h2>По даному запиту нічого не знайдено</h2>
+        </ErrorMsg>
+      ) : (
+        <ImageGallery images={images} onClick={setCurrImg} />
+      )}
+      {status === STATUS.pending ? (
+        <Loader />
+      ) : (
+        shouldShowBtn && (
+          <Button type="button" text="Load More" onClick={handleLoadMore} />
+        )
+      )}
+      {currImg && (
+        <Modal
+          currImg={currImg}
+          onClick={handleModalMouseClick}
+          onKeyDown={handleModalEscClick}
+        />
+      )}
+    </Wrapper>
+  );
 }
-
-export default App;
